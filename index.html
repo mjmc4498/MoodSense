@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MoodSense — Detector de Ánimo (Web, Local)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <style>
+        :root {
+            --bs-body-bg: #0b0f1a;
+            --bs-body-color: #e9edff;
+            --surface-color: #1b2133;
+            --accent-color: #0d6efd;
+            --success-color: #198754;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --border-radius-lg: 16px;
+            --border-radius-md: 12px;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+        }
+
+        .card {
+            background-color: var(--surface-color);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: var(--border-radius-lg);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .card-header {
+            background-color: rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .btn {
+            border-radius: var(--border-radius-md);
+        }
+
+        .form-control, .form-select {
+            background-color: #2a3145;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: var(--border-radius-md);
+        }
+        .form-control:focus, .form-select:focus {
+            background-color: #2a3145;
+            color: var(--bs-body-color);
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+        }
+
+        #videoWrap {
+            position: relative;
+            background-color: #000;
+            border-radius: var(--border-radius-md);
+            overflow: hidden;
+            aspect-ratio: 16 / 9;
+        }
+
+        #video, #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        #video {
+            object-fit: cover;
+        }
+
+        .table {
+            --bs-table-bg: var(--surface-color);
+            --bs-table-striped-bg: rgba(255, 255, 255, 0.03);
+        }
+
+        .table thead {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
+            }
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg bg-body-tertiary sticky-top shadow-sm">
+        <div class="container-xxl">
+            <a class="navbar-brand fw-bold" href="#">📹 MoodSense</a>
+            <span class="navbar-text me-auto">
+                <span class="badge text-bg-secondary">Procesa localmente · sin enviar video</span>
+            </span>
+            <div class="d-flex">
+                <button id="start-camera" class="btn btn-primary me-2">Iniciar cámara</button>
+                <button id="stop-camera" class="btn btn-outline-secondary" disabled>Detener</button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container-xxl py-4">
+        <div class="row g-4">
+            <!-- Columna Principal -->
+            <div class="col-lg-8">
+                <div class="card mb-4">
+                    <div class="card-header fw-bold">Visor</div>
+                    <div class="card-body">
+                        <div id="videoWrap" class="shadow-inner">
+                            <video id="video" autoplay muted playsinline></video>
+                            <canvas id="overlay"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex align-items-center flex-wrap gap-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="toggle-speech" checked>
+                        <label class="form-check-label" for="toggle-speech">Activar voz</label>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="toggle-preview">
+                        <label class="form-check-label" for="toggle-preview">Ocultar previsualización</label>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="toggle-sos" checked>
+                        <label class="form-check-label" for="toggle-sos">Auto-alerta familiar</label>
+                    </div>
+                    <div id="status-badge" class="badge fs-6 rounded-pill bg-dark ms-lg-auto">
+                        😶 Estado: Esperando...
+                    </div>
+                    <button id="export-csv" class="btn btn-sm btn-outline-info">Exportar CSV</button>
+                    <button id="clear-history" class="btn btn-sm btn-outline-danger">Limpiar historial</button>
+                </div>
+            </div>
+
+            <!-- Columna Secundaria -->
+            <div class="col-lg-4">
+                <div class="card mb-4">
+                    <div class="card-header fw-bold">Contacto familiar</div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="contact-name" class="form-label">Nombre</label>
+                            <input type="text" class="form-control" id="contact-name" placeholder="Ej: Mamá">
+                        </div>
+                        <div class="mb-3">
+                            <label for="contact-phone" class="form-label">Teléfono</label>
+                            <input type="tel" class="form-control" id="contact-phone" placeholder="+51...">
+                        </div>
+                        <div class="mb-3">
+                            <label for="contact-wa" class="form-label">WhatsApp</label>
+                            <input type="tel" class="form-control" id="contact-wa" placeholder="5199...">
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button id="save-contact" class="btn btn-primary">Guardar</button>
+                            <button id="test-call" class="btn btn-outline-secondary">Llamada</button>
+                            <button id="test-wa" class="btn btn-outline-secondary">WhatsApp</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header fw-bold">Historial (localStorage)</div>
+                    <div class="card-body">
+                        <div class="table-responsive" style="max-height: 400px;">
+                            <table class="table table-dark table-striped table-hover table-sm align-middle">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha/Hora</th>
+                                        <th>Ánimo</th>
+                                        <th>Conf.</th>
+                                        <th>happy</th>
+                                        <th>sad</th>
+                                        <th>angry</th>
+                                        <th>fearful</th>
+                                        <th>disgusted</th>
+                                        <th>surprised</th>
+                                        <th>neutral</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="history-table-body">
+                                    <!-- Filas se insertarán aquí con JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="form-text mt-2">Privacidad: los datos se guardan SOLO en tu navegador.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Contenedor de Toasts -->
+    <div class="toast-container position-fixed top-0 end-0 p-3">
+        <div id="recommendation-toast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header">
+                <strong class="me-auto">💡 Recomendación</strong>
+                <small>Ahora</small>
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body">
+                <!-- Contenido de la recomendación se insertará aquí -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Alerta SOS -->
+    <div class="modal fade" id="sos-modal" tabindex="-1" aria-labelledby="sosModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h1 class="modal-title fs-5" id="sosModalLabel">🔔 Alerta de apoyo</h1>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="sos-modal-body">
+                    <!-- Mensaje dinámico se insertará aquí -->
+                </div>
+                <div class="modal-footer">
+                    <a id="sos-call" class="btn btn-primary" href="#" role="button">📞 Llamar</a>
+                    <a id="sos-wa" class="btn btn-success" href="#" target="_blank" role="button">💬 WhatsApp</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+
+    <script>
+    'use strict';
+
+    // --- 1. CONSTANTS & CONFIGURATION ---
+    const CONFIG = {
+        MODEL_URL: 'https://vladmandic.github.io/face-api/model/',
+        DETECTION_INTERVAL_MS: 333,
+        SPEECH_CONFIDENCE_THRESHOLD: 0.6,
+        SOS_WINDOW_SECONDS: 8,
+        SOS_CONFIDENCE_THRESHOLD: 0.7,
+        SOS_COOLDOWN_MINUTES: 10,
+        TOAST_COOLDOWN_MINUTES: 5,
+        HISTORY_MAX_VIEW_ENTRIES: 200,
+    };
+
+    const EMOTION_MAP = {
+        neutral: { text: 'Neutral', emoji: '😶', color: 'dark' },
+        happy:   { text: 'Feliz', emoji: '😊', color: 'success' },
+        sad:     { text: 'Triste', emoji: '😔', color: 'danger' },
+        angry:   { text: 'Enojado', emoji: '😠', color: 'danger' },
+        fearful: { text: 'Temeroso', emoji: '😨', color: 'danger' },
+        disgusted: { text: 'Disgustado', emoji: '🤢', color: 'danger' },
+        surprised: { text: 'Sorprendido', emoji: '😲', color: 'dark' },
+    };
+
+    const UI_TEXTS = {
+        recommendations: {
+            neutral: "Respira profundo… pausas activas y agua…",
+            happy: "¡Aprovecha el momento! Una playlist alegre y estiramientos pueden potenciarlo.",
+            sad: "Micro-rutina: bebe agua, camina 5-10 min, y habla o escribe 3 líneas sobre cómo te sientes.",
+            angry: "Prueba la técnica 4-7-8 (inhala 4s, sostén 7s, exhala 8s) x 4. Aléjate 2-3 min antes de responder.",
+            fearful: "Usa la técnica 5-4-3-2-1 para anclarte. Respiración lenta. Piensa en 3 acciones concretas que puedes tomar.",
+            disgusted: "Ventila el área, cambia de tarea por 10 minutos y vuelve con una perspectiva fresca.",
+            surprised: "¿Es una sorpresa positiva o negativa? Toma 3 respiraciones nasales lentas para procesarlo."
+        },
+        sos_message: (contactName, emotion) => `Hemos notado que podrías estar sintiéndote ${emotion} durante los últimos minutos. ¿Quieres contactar a ${contactName} para recibir apoyo?`
+    };
+
+    // --- 2. APPLICATION STATE ---
+    const STATE = {
+        isCameraOn: false,
+        detectionIntervalId: null,
+        lastDetectedEmotion: 'neutral',
+        isSpeechEnabled: true,
+        isPreviewHidden: false,
+        isSosEnabled: true,
+        sosAnalysisQueue: [],
+        sosOnCooldown: false,
+        toastCooldownTimers: {}, // { emotion: timeoutId }
+    };
+
+    // --- 3. UI ELEMENT SELECTORS ---
+    const UI = {};
+
+    // --- 4. LOCAL STORAGE MANAGEMENT ---
+    const Storage = {
+        getHistory: () => JSON.parse(localStorage.getItem('moodHistory') || '[]'),
+        saveHistory: (history) => localStorage.setItem('moodHistory', JSON.stringify(history)),
+        clearHistory: () => localStorage.removeItem('moodHistory'),
+        getContact: () => JSON.parse(localStorage.getItem('moodContact') || '{}'),
+        saveContact: (contact) => localStorage.setItem('moodContact', JSON.stringify(contact)),
+    };
+
+    // --- 5. UI UPDATE FUNCTIONS ---
+    function updateStatus(text, color = 'dark') {
+        UI.statusBadge.textContent = text;
+        UI.statusBadge.className = `badge fs-6 rounded-pill ms-lg-auto bg-${color}`;
+    }
+
+    function getTopEmotion(expressions) {
+        if (!expressions) return null;
+        return Object.keys(expressions).reduce((a, b) => expressions[a] > expressions[b] ? a : b);
+    }
+
+    function renderHistory() {
+        const history = Storage.getHistory();
+        const recentHistory = history.slice(-CONFIG.HISTORY_MAX_VIEW_ENTRIES);
+        UI.historyTableBody.innerHTML = recentHistory.reverse().map(entry => {
+            const topEmotion = getTopEmotion(entry.expressions);
+            const score = entry.expressions[topEmotion].toFixed(2);
+            return `
+                <tr>
+                    <td>${new Date(entry.timestamp).toLocaleString()}</td>
+                    <td>${EMOTION_MAP[topEmotion].emoji} ${EMOTION_MAP[topEmotion].text}</td>
+                    <td>${score}</td>
+                    ${Object.values(entry.expressions).map(s => `<td>${s.toFixed(3)}</td>`).join('')}
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function addToHistory(expressions) {
+        const history = Storage.getHistory();
+        const newEntry = {
+            timestamp: Date.now(),
+            expressions: expressions,
+        };
+        history.push(newEntry);
+        Storage.saveHistory(history);
+        renderHistory();
+    }
+
+    // --- 6. MODELS & CAMERA ---
+    async function loadModels() {
+        try {
+            updateStatus('😶 Cargando modelos...');
+            await faceapi.nets.tinyFaceDetector.loadFromUri(CONFIG.MODEL_URL);
+            await faceapi.nets.faceExpressionNet.loadFromUri(CONFIG.MODEL_URL);
+            updateStatus('✅ Modelos cargados', 'success');
+        } catch (error) {
+            console.error("Error loading models:", error);
+            updateStatus('❌ Error al cargar modelos', 'danger');
+        }
+    }
+
+    async function startCamera() {
+        if (STATE.isCameraOn) return;
+        try {
+            updateStatus('😶 Solicitando cámara...');
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 540 } },
+                audio: false
+            });
+            UI.video.srcObject = stream;
+            STATE.isCameraOn = true;
+            UI.startBtn.disabled = true;
+            UI.stopBtn.disabled = false;
+            updateStatus('😶 Cámara iniciada, detectando...');
+
+            STATE.detectionIntervalId = setInterval(runDetection, CONFIG.DETECTION_INTERVAL_MS);
+        } catch (error) {
+            console.error("Error starting camera:", error);
+            updateStatus('❌ Error con la cámara', 'danger');
+            STATE.isCameraOn = false;
+        }
+    }
+
+    function stopCamera() {
+        if (!STATE.isCameraOn) return;
+
+        clearInterval(STATE.detectionIntervalId);
+        STATE.detectionIntervalId = null;
+
+        const stream = UI.video.srcObject;
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+        }
+        UI.video.srcObject = null;
+
+        const ctx = UI.overlay.getContext('2d');
+        ctx.clearRect(0, 0, UI.overlay.width, UI.overlay.height);
+
+        STATE.isCameraOn = false;
+        UI.startBtn.disabled = false;
+        UI.stopBtn.disabled = true;
+        updateStatus('😶 Estado: En espera');
+    }
+
+
+    // --- 7. DETECTION LOOP ---
+    async function runDetection() {
+        if (!STATE.isCameraOn || UI.video.paused || UI.video.ended) {
+            return;
+        }
+
+        const detections = await faceapi.detectSingleFace(
+            UI.video,
+            new faceapi.TinyFaceDetectorOptions()
+        ).withFaceExpressions();
+
+        const canvasCtx = UI.overlay.getContext('2d');
+        const dims = faceapi.matchDimensions(UI.overlay, UI.video, true);
+        faceapi.resizeResults(detections, dims);
+
+        canvasCtx.clearRect(0, 0, dims.width, dims.height);
+
+        if (detections && !STATE.isPreviewHidden) {
+            faceapi.draw.drawDetections(UI.overlay, detections);
+            faceapi.draw.drawFaceExpressions(UI.overlay, detections);
+        }
+
+        if (detections) {
+            const topEmotion = getTopEmotion(detections.expressions);
+            const emotionData = EMOTION_MAP[topEmotion];
+            const score = detections.expressions[topEmotion];
+            updateStatus(`${emotionData.emoji} Estado: ${emotionData.text} · conf. ${score.toFixed(2)}`, emotionData.color);
+
+            addToHistory(detections.expressions);
+            speakEmotion(topEmotion, score);
+            showRecommendation(topEmotion);
+            runSosCheck(detections.expressions, topEmotion);
+
+            STATE.lastDetectedEmotion = topEmotion;
+        }
+    }
+
+    // --- 8. RECOMMENDATION TOASTS ---
+    function speakEmotion(emotion, score) {
+        if (!STATE.isSpeechEnabled || score < CONFIG.SPEECH_CONFIDENCE_THRESHOLD) return;
+        if (emotion === STATE.lastDetectedEmotion) return;
+
+        try {
+            const utterance = new SpeechSynthesisUtterance(EMOTION_MAP[emotion].text);
+            utterance.lang = 'es-ES';
+            window.speechSynthesis.speak(utterance);
+        } catch (error) {
+            console.error("Speech synthesis error:", error);
+            STATE.isSpeechEnabled = false; // Disable on error
+            UI.speechToggle.checked = false;
+        }
+    }
+
+    function showRecommendation(emotion) {
+        if (emotion === STATE.lastDetectedEmotion || STATE.toastCooldownTimers[emotion]) return;
+
+        const toastBody = UI.recommendationToastEl.querySelector('.toast-body');
+        toastBody.textContent = UI_TEXTS.recommendations[emotion];
+        UI.recommendationToast.show();
+
+        STATE.toastCooldownTimers[emotion] = setTimeout(() => {
+            delete STATE.toastCooldownTimers[emotion];
+        }, CONFIG.TOAST_COOLDOWN_MINUTES * 60 * 1000);
+    }
+
+    // --- 9. SOS LOGIC ---
+    function runSosCheck(expressions, topEmotion) {
+        if (!STATE.isSosEnabled || STATE.sosOnCooldown) return;
+
+        const negativityScore = (expressions.sad || 0) + (expressions.angry || 0) + (expressions.fearful || 0);
+        STATE.sosAnalysisQueue.push(negativityScore);
+
+        const maxQueueSize = Math.round((CONFIG.SOS_WINDOW_SECONDS * 1000) / CONFIG.DETECTION_INTERVAL_MS);
+        while (STATE.sosAnalysisQueue.length > maxQueueSize) {
+            STATE.sosAnalysisQueue.shift();
+        }
+
+        if (STATE.sosAnalysisQueue.length < maxQueueSize) return; // Wait for a full window
+
+        const averageNegativity = STATE.sosAnalysisQueue.reduce((a, b) => a + b, 0) / STATE.sosAnalysisQueue.length;
+
+        if (averageNegativity > CONFIG.SOS_CONFIDENCE_THRESHOLD) {
+            triggerSosAlert(topEmotion);
+        }
+    }
+
+    function triggerSosAlert(emotion) {
+        const contact = Storage.getContact();
+        if (!contact.name) return; // Can't alert without a contact name
+
+        UI.sosModalBody.textContent = UI_TEXTS.sos_message(contact.name, EMOTION_MAP[emotion].text.toLowerCase());
+
+        if (contact.phone) {
+            UI.sosCallBtn.href = `tel:${contact.phone}`;
+            UI.sosCallBtn.classList.remove('disabled');
+        } else {
+            UI.sosCallBtn.href = '#';
+            UI.sosCallBtn.classList.add('disabled');
+        }
+
+        if (contact.wa) {
+            const waMessage = encodeURIComponent(`Hola ${contact.name}, solo quería saber cómo estás. MoodSense notó que podría necesitar algo de apoyo.`);
+            UI.sosWaBtn.href = `https://wa.me/${contact.wa}?text=${waMessage}`;
+            UI.sosWaBtn.classList.remove('disabled');
+        } else {
+            UI.sosWaBtn.href = '#';
+            UI.sosWaBtn.classList.add('disabled');
+        }
+
+        UI.sosModal.show();
+
+        // Start cooldown
+        STATE.sosOnCooldown = true;
+        setTimeout(() => {
+            STATE.sosOnCooldown = false;
+        }, CONFIG.SOS_COOLDOWN_MINUTES * 60 * 1000);
+
+        // Clear queue to prevent immediate re-trigger
+        STATE.sosAnalysisQueue = [];
+    }
+
+
+    // --- 10. EVENT HANDLERS ---
+    function handleClearHistory() {
+        if (confirm('¿Estás seguro de que quieres borrar todo el historial? Esta acción no se puede deshacer.')) {
+            Storage.clearHistory();
+            renderHistory();
+        }
+    }
+
+    function handleExportCsv() {
+        const history = Storage.getHistory();
+        if (history.length === 0) {
+            alert('No hay historial para exportar.');
+            return;
+        }
+        const headers = 'timestamp,fecha,emotion,score,happy,sad,angry,fearful,disgusted,surprised,neutral';
+        const rows = history.map(entry => {
+            const topEmotion = getTopEmotion(entry.expressions);
+            const score = entry.expressions[topEmotion];
+            const { happy, sad, angry, fearful, disgusted, surprised, neutral } = entry.expressions;
+            return `${entry.timestamp},"${new Date(entry.timestamp).toLocaleString()}",${topEmotion},${score.toFixed(4)},${happy.toFixed(4)},${sad.toFixed(4)},${angry.toFixed(4)},${fearful.toFixed(4)},${disgusted.toFixed(4)},${surprised.toFixed(4)},${neutral.toFixed(4)}`;
+        });
+        const csvContent = `data:text/csv;charset=utf-8,${headers}\n${rows.join('\n')}`;
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement('a');
+        link.setAttribute('href', encodedUri);
+        link.setAttribute('download', `moodsense_history_${Date.now()}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    function loadContactInfo() {
+        const contact = Storage.getContact();
+        UI.contactName.value = contact.name || '';
+        UI.contactPhone.value = contact.phone || '';
+        UI.contactWa.value = contact.wa || '';
+    }
+
+    function handleSaveContact() {
+        const contact = {
+            name: UI.contactName.value.trim(),
+            phone: UI.contactPhone.value.trim(),
+            wa: UI.contactWa.value.trim(),
+        };
+        Storage.saveContact(contact);
+        alert('Contacto guardado.');
+    }
+
+    function handleTestCall() {
+        const phone = Storage.getContact().phone;
+        if (phone) {
+            window.location.href = `tel:${phone}`;
+        } else {
+            alert('Guarda un número de teléfono primero.');
+        }
+    }
+
+    function handleTestWa() {
+        const wa = Storage.getContact().wa;
+        if (wa) {
+            window.open(`https://wa.me/${wa}`, '_blank');
+        } else {
+            alert('Guarda un número de WhatsApp primero.');
+        }
+    }
+
+    function setupEventListeners() {
+        UI.startBtn.addEventListener('click', startCamera);
+        UI.stopBtn.addEventListener('click', stopCamera);
+        UI.clearHistoryBtn.addEventListener('click', handleClearHistory);
+        UI.exportCsvBtn.addEventListener('click', handleExportCsv);
+        UI.saveContactBtn.addEventListener('click', handleSaveContact);
+        UI.testCallBtn.addEventListener('click', handleTestCall);
+        UI.testWaBtn.addEventListener('click', handleTestWa);
+
+        UI.speechToggle.addEventListener('change', (e) => STATE.isSpeechEnabled = e.target.checked);
+        UI.previewToggle.addEventListener('change', (e) => {
+            STATE.isPreviewHidden = e.target.checked;
+            UI.videoWrap.style.display = STATE.isPreviewHidden ? 'none' : 'block';
+        });
+        UI.sosToggle.addEventListener('change', (e) => STATE.isSosEnabled = e.target.checked);
+    }
+
+    // --- 11. INITIALIZATION ---
+    document.addEventListener('DOMContentLoaded', async () => {
+        // Cache UI elements
+        UI.startBtn = document.getElementById('start-camera');
+        UI.stopBtn = document.getElementById('stop-camera');
+        UI.video = document.getElementById('video');
+        UI.overlay = document.getElementById('overlay');
+        UI.videoWrap = document.getElementById('videoWrap');
+        UI.statusBadge = document.getElementById('status-badge');
+        UI.speechToggle = document.getElementById('toggle-speech');
+        UI.previewToggle = document.getElementById('toggle-preview');
+        UI.sosToggle = document.getElementById('toggle-sos');
+        UI.exportCsvBtn = document.getElementById('export-csv');
+        UI.clearHistoryBtn = document.getElementById('clear-history');
+        UI.contactName = document.getElementById('contact-name');
+        UI.contactPhone = document.getElementById('contact-phone');
+        UI.contactWa = document.getElementById('contact-wa');
+        UI.saveContactBtn = document.getElementById('save-contact');
+        UI.testCallBtn = document.getElementById('test-call');
+        UI.testWaBtn = document.getElementById('test-wa');
+        UI.historyTableBody = document.getElementById('history-table-body');
+        UI.recommendationToastEl = document.getElementById('recommendation-toast');
+        UI.recommendationToast = new bootstrap.Toast(UI.recommendationToastEl);
+        UI.sosModalEl = document.getElementById('sos-modal');
+        UI.sosModal = new bootstrap.Modal(UI.sosModalEl);
+        UI.sosModalBody = document.getElementById('sos-modal-body');
+        UI.sosCallBtn = document.getElementById('sos-call');
+        UI.sosWaBtn = document.getElementById('sos-wa');
+
+        setupEventListeners();
+        await loadModels();
+        loadContactInfo();
+        renderHistory();
+    });
+
+    </script>
+</body>
+</html>
